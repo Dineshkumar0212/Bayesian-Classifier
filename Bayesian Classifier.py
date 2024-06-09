@@ -29,7 +29,7 @@ class NaiveBayesClassifier:
         return posterior + np.log(prior)
 
 def main():
-    st.write("22AIA-MACHINE MASTERS")
+    st.write("BINARY WIZARDS")
     st.title("Tennis Data Classifier")
 
     # File upload
