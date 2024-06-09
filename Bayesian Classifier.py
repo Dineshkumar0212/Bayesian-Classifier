@@ -1,73 +1,125 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.tree import export_graphviz
+import graphviz
+import streamlit as st
+import missingno as mn
+import io
 
-class NaiveBayesClassifier:
-    def fit(self, X, y):
-        self.classes = np.unique(y)
-        self.parameters = {}
-        
-        for i, c in enumerate(self.classes):
-            X_c = X[np.where(y == c)]
-            self.parameters[c] = {
-                'mean': X_c.mean(axis=0),
-                'var': X_c.var(axis=0),
-                'prior': X_c.shape[0] / X.shape[0]
-            }
+# Set the page configuration
+st.set_page_config(page_title="Credit Card Fraud Detection", layout="wide")
 
-    def predict(self, X):
-        posteriors = []
-        for x in X:
-            posteriors.append([self._posterior(x, c) for c in self.classes])
-        return self.classes[np.argmax(posteriors, axis=1)]
-    
-    def _posterior(self, x, c):
-        mean = self.parameters[c]['mean']
-        var = self.parameters[c]['var']
-        prior = self.parameters[c]['prior']
-        posterior = np.sum(-0.5 * np.log(2. * np.pi * var) - ((x - mean) ** 2) / (2. * var))
-        return posterior + np.log(prior)
+# Sidebar for file upload and model selection
+st.sidebar.title("Upload and Configure")
+uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
 
-def main():
-    st.write("BINARY WIZARDS")
-    st.title("Tennis Data Classifier")
+# Header for the main page
+st.title("22AIA-Binary Wizards-Naive Bayesian Classfier")
 
-    # File upload
-    uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
+if uploaded_file is not None:
+    # Read the dataset
+    df = pd.read_csv(uploaded_file)
 
-    if uploaded_file is not None:
-        try:
-            data = pd.read_csv(uploaded_file)
-            st.write("The first 5 rows of data:")
-            st.write(data.head())
+    # Show the first five rows of the dataset
+    st.header("Dataset Preview")
+    st.write(df.head())
 
-            X = data.iloc[:, :-1]
-            y = data.iloc[:, -1]
+    # Display dataset information
+    st.header("Dataset Information")
+    buffer = io.StringIO()
+    df.info(buf=buffer)
+    s = buffer.getvalue()
+    st.text(s)
 
-            # Convert categorical data to numerical
-            for col in X.columns:
-                X[col] = X[col].astype('category').cat.codes
-            y = y.astype('category').cat.codes
+    # Find and display missing values
+    st.header("Missing Values")
+    st.write(df.isna().sum())
 
-            # Split data into train and test sets
-            split_ratio = 0.8
-            indices = np.random.permutation(len(X))
-            train_size = int(len(X) * split_ratio)
-            train_idx, test_idx = indices[:train_size], indices[train_size:]
-            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    # Visualize missing values
+    st.subheader("Missing Values Visualization")
+    fig, ax = plt.subplots()
+    mn.bar(df, ax=ax)
+    st.pyplot(fig)
 
-            # Train classifier
-            classifier = NaiveBayesClassifier()
-            classifier.fit(X_train.to_numpy(), y_train.to_numpy())
+    X = df.drop('fraud', axis=1)
+    Y = df['fraud']
 
-            # Predict and evaluate
-            y_pred = classifier.predict(X_test.to_numpy())
-            accuracy = np.mean(y_pred == y_test.to_numpy())
+    st.header("Feature Analysis")
+    st.subheader("Boxplot of Features")
+    fig, axes = plt.subplots(5, 5, figsize=(20, 20))
+    for i, col in enumerate(X.columns):
+        if i < 25:  # Adjust according to the number of features
+            sns.boxplot(X[col], ax=axes[i//5, i%5])
+            axes[i//5, i%5].set_xlabel(col, fontsize=20)
+    plt.tight_layout()
+    st.pyplot(fig)
 
-            st.write(f"Accuracy: {accuracy:.2f}")
-        except Exception as e:
-            st.error(f"An error occurred: {e}")
+    # Split X and Y
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=0)
 
-if __name__ == "__main__":
-    main()
+    # Standardize the data
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    # Decision Tree classifier
+    clf = DecisionTreeClassifier(criterion="entropy", random_state=0)
+    clf.fit(X_train, Y_train)
+
+    # Predict the values of testing
+    Y_pred_dt = clf.predict(X_test)
+
+    # Calculate and display the confusion matrix
+    st.header("Model Performance")
+    st.subheader("Decision Tree")
+    st.write("Confusion Matrix:")
+    cm_dt = confusion_matrix(Y_test, Y_pred_dt)
+    st.write(cm_dt)
+
+    # Calculate and display the accuracy score
+    accuracy_dt = accuracy_score(Y_test, Y_pred_dt)
+    st.write("Accuracy:", accuracy_dt)
+
+    # Visualize the decision tree
+    st.write("Decision Tree Visualization:")
+    dot_data = export_graphviz(clf, feature_names=X.columns, filled=True)
+    st.graphviz_chart(dot_data)
+
+    # Naive Bayes Algorithm
+    clf1 = GaussianNB()
+
+    # Train the model
+    clf1.fit(X_train, Y_train)
+
+    # Predict the values of testing
+    Y_pred_nb = clf1.predict(X_test)
+
+    # Calculate and display the confusion matrix
+    st.subheader("Naive Bayes")
+    st.write("Confusion Matrix:")
+    cm_nb = confusion_matrix(Y_test, Y_pred_nb)
+    st.write(cm_nb)
+
+    # Calculate and display the accuracy score
+    accuracy_nb = accuracy_score(Y_test, Y_pred_nb)
+    st.write("Accuracy:", accuracy_nb)
+
+    # Comparing the accuracy scores
+    accuracies = [accuracy_dt * 100, accuracy_nb * 100]
+    labels = ['Decision Tree', 'Naive Bayes']
+
+    # Display the accuracy comparison bar chart
+    st.subheader("Accuracy Comparison")
+    fig, ax = plt.subplots()
+    ax.bar(labels, accuracies, color=['blue', 'green'])
+    ax.set_ylabel('Accuracy (%)')
+    ax.set_title('Comparison of Model Accuracies')
+    st.pyplot(fig)
+else:
+    st.info("Please upload a CSV file to proceed.")
