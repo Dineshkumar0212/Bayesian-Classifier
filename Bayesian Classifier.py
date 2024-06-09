@@ -2,94 +2,72 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-def label_encode(data):
-    unique_values = np.unique(data)
-    label_map = {val: idx for idx, val in enumerate(unique_values)}
-    encoded_data = [label_map[val] for val in data]
-    return encoded_data, label_map
+class NaiveBayesClassifier:
+    def fit(self, X, y):
+        self.classes = np.unique(y)
+        self.parameters = {}
+        
+        for i, c in enumerate(self.classes):
+            X_c = X[np.where(y == c)]
+            self.parameters[c] = {
+                'mean': X_c.mean(axis=0),
+                'var': X_c.var(axis=0),
+                'prior': X_c.shape[0] / X.shape[0]
+            }
+
+    def predict(self, X):
+        posteriors = []
+        for x in X:
+            posteriors.append([self._posterior(x, c) for c in self.classes])
+        return self.classes[np.argmax(posteriors, axis=1)]
+    
+    def _posterior(self, x, c):
+        mean = self.parameters[c]['mean']
+        var = self.parameters[c]['var']
+        prior = self.parameters[c]['prior']
+        posterior = np.sum(-0.5 * np.log(2. * np.pi * var) - ((x - mean) ** 2) / (2. * var))
+        return posterior + np.log(prior)
 
 def main():
-    st.title("Tennis Play Prediction")
+    st.write("22AIA-MACHINE MASTERS")
+    st.title("Tennis Data Classifier")
 
-    # Create a DataFrame
-    data = {
-        'Outlook': ['sunny', 'sunny', 'overcast', 'rainy', 'rainy', 'rainy', 'overcast', 'sunny', 'sunny', 'rainy', 'sunny', 'overcast', 'overcast', 'rainy'],
-        'Temperature': ['hot', 'hot', 'hot', 'mild', 'cool', 'cool', 'cool', 'mild', 'cool', 'mild', 'mild', 'mild', 'hot', 'mild'],
-        'Humidity': ['high', 'high', 'high', 'high', 'normal', 'normal', 'normal', 'high', 'normal', 'normal', 'normal', 'high', 'normal', 'high'],
-        'Windy': [False, True, False, False, False, True, True, False, False, False, True, True, False, True],
-        'PlayTennis': ['no', 'no', 'yes', 'yes', 'yes', 'no', 'yes', 'no', 'yes', 'yes', 'yes', 'yes', 'yes', 'no']
-    }
-    df = pd.DataFrame(data)
+    # File upload
+    uploaded_file = st.file_uploader("Upload CSV file", type=['csv'])
 
-    st.write("The first 5 values of data are:")
-    st.write(df.head())
+    if uploaded_file is not None:
+        try:
+            data = pd.read_csv(uploaded_file)
+            st.write("The first 5 rows of data:")
+            st.write(data.head())
 
-    # Obtain Train data and Train output
-    X = df.iloc[:,:-1]
-    st.write("\nThe First 5 values of train data are:\n", X.head())
+            X = data.iloc[:, :-1]
+            y = data.iloc[:, -1]
 
-    y = df.iloc[:,-1]
-    st.write("\nThe first 5 values of Train output are:\n", y.head())
+            # Convert categorical data to numerical
+            for col in X.columns:
+                X[col] = X[col].astype('category').cat.codes
+            y = y.astype('category').cat.codes
 
-    # Convert categorical variables to numbers 
-    X['Outlook'], outlook_map = label_encode(X['Outlook'])
-    X['Temperature'], temp_map = label_encode(X['Temperature'])
-    X['Humidity'], humidity_map = label_encode(X['Humidity'])
+            # Split data into train and test sets
+            split_ratio = 0.8
+            indices = np.random.permutation(len(X))
+            train_size = int(len(X) * split_ratio)
+            train_idx, test_idx = indices[:train_size], indices[train_size:]
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
-    st.write("\nNow the Train data is :\n", X.head())
+            # Train classifier
+            classifier = NaiveBayesClassifier()
+            classifier.fit(X_train.to_numpy(), y_train.to_numpy())
 
-    # Convert target labels to numbers
-    y, play_tennis_map = label_encode(y)
-    st.write("\nNow the Train output is\n", y)
+            # Predict and evaluate
+            y_pred = classifier.predict(X_test.to_numpy())
+            accuracy = np.mean(y_pred == y_test.to_numpy())
 
-    # Convert y to NumPy array for indexing
-    y = np.array(y)
-
-    # Split data into train and test sets
-    data_size = X.shape[0]
-    train_size = int(0.8 * data_size)
-    np.random.seed(42)  # For reproducibility
-    indices = np.random.permutation(data_size)
-    train_indices, test_indices = indices[:train_size], indices[train_size:]
-    X_train, X_test = X.iloc[train_indices], X.iloc[test_indices]
-    y_train, y_test = y[train_indices], y[test_indices]
-
-    # Train Gaussian Naive Bayes manually
-    prior_probabilities = {}
-    for label in np.unique(y_train):
-        prior_probabilities[label] = np.sum(y_train == label) / len(y_train)
-
-    likelihoods = {}
-    for feature in X_train.columns:
-        likelihoods[feature] = {}
-        for label in np.unique(y_train):
-            label_indices = np.where(y_train == label)[0]
-            feature_values = X_train.iloc[label_indices][feature]  # Use iloc for integer-based indexing
-            value_counts = np.bincount(feature_values)
-            total_counts = np.sum(value_counts)
-            likelihoods[feature][label] = {value: count / total_counts for value, count in enumerate(value_counts)}
-
-    # Predict using Naive Bayes
-    def predict(X):
-        predictions = []
-        for idx, row in X.iterrows():
-            posterior_probabilities = {}
-            for label in np.unique(y_train):
-                posterior_probabilities[label] = prior_probabilities[label]
-                for feature, value in row.items():  # Use items() instead of iteritems()
-                    if value in likelihoods[feature][label]:
-                        posterior_probabilities[label] *= likelihoods[feature][label][value]
-                    else:
-                        # Handle unseen feature values by assuming a small probability
-                        posterior_probabilities[label] *= 1e-6
-            predictions.append(max(posterior_probabilities, key=posterior_probabilities.get))
-        return predictions
-
-    # Evaluate accuracy
-    y_pred = predict(X_test)
-    accuracy = np.mean(y_pred == y_test)
-
-    st.write("Accuracy is:", accuracy)
+            st.write(f"Accuracy: {accuracy:.2f}")
+        except Exception as e:
+            st.error(f"An error occurred: {e}")
 
 if __name__ == "__main__":
     main()
